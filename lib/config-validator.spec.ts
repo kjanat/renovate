@@ -94,14 +94,31 @@ describe.concurrent('config-validator', () => {
       });
     });
 
-    it('exits 1 when the file does not exist', async () => {
-      const { exitCode, all } = await runValidator([
-        '--no-global',
-        '/tmp/does-not-exist-renovate.json',
-      ]);
+    it('checks all explicit paths before validating any file', async () => {
+      await withTmpDir(async (dirPath) => {
+        const file = await writeRepoConfig(dirPath, 'renovate.json', {});
+        const missing = path.join(dirPath, 'missing.json');
+        const { exitCode, all } = await runValidator([
+          '--no-global',
+          file,
+          missing,
+        ]);
 
-      expect(exitCode).toBe(1);
-      expect(all).toContain('File does not exist');
+        expect(exitCode).toBe(2);
+        expect(all).toContain(
+          `Path '${missing}' for argument <configFiles> does not exist`,
+        );
+        expect(all).not.toContain('Validating');
+      });
+    });
+
+    it('rejects a directory as an explicit config file', async () => {
+      await withTmpDir(async (dirPath) => {
+        const { exitCode, all } = await runValidator([dirPath]);
+
+        expect(exitCode).toBe(2);
+        expect(all).toContain('is a directory, expected a file');
+      });
     });
 
     it('exits 0 without --strict when migration is needed', async () => {

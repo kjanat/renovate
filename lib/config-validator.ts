@@ -186,7 +186,7 @@ interface PackageJson {
         // oxlint-disable-next-line renovate/no-hardcoded-docs-url -- CLI help text, no config available
         'If no [config-files...] are given, renovate-config-validator will look at the default config file locations (https://docs.renovatebot.com/configuration-options/)',
     )
-    .arg('configFiles', arg.string().variadic().default([]))
+    .arg('configFiles', arg.path({ type: 'file' }).variadic().default([]))
     .example('', 'Validate the configuration from the default locations')
     .example(
       '--strict config.js',
@@ -244,11 +244,6 @@ interface PackageJson {
         const configType = isGlobalConfig ? 'global' : 'repo';
         for (const file of files) {
           try {
-            if (!(await pathExists(file))) {
-              returnVal = 1;
-              logger.error({ file }, 'File does not exist');
-              break;
-            }
             const parsedContent = await getParsedContent(file);
             try {
               logger.info(`Validating ${file} as ${configType} config`);
