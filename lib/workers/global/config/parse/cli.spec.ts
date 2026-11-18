@@ -407,6 +407,22 @@ describe('workers/global/config/parse/cli', () => {
       expect(stdout).toContain('\u001B]8;;https://support.atlassian.com/');
     });
 
+    it('underlines help links and colors inline code in a terminal', async () => {
+      const chunks: string[] = [];
+      const adapter = createTestAdapter({
+        argv: ['node', 'renovate', '--help'],
+        isTTY: true,
+        stdout: (chunk) => {
+          chunks.push(chunk);
+        },
+      });
+
+      await expect(cli.runRenovateCli(vi.fn(), adapter)).resolves.toBe(0);
+      const help = chunks.join('');
+      expect(help).toContain('\u001B[4m\u001B[36mdevelopment');
+      expect(help).toContain('\u001B[33mtrue\u001B[39m');
+    });
+
     it('leaves arguments after the separator untouched', async () => {
       argv.push('--', '--version', '--dry-run');
       await expect(cli.getConfig(argv)).resolves.toEqual({

@@ -59,7 +59,7 @@ function optionFlag(type: string): FlagBuilder<FlagConfig> {
 
 function createProgram(
   onConfig: (config: AllConfig) => void | number | Promise<number>,
-  hyperlinks = false,
+  render?: ReturnType<typeof resolveRenderContext>,
 ): ReturnType<typeof cli> {
   let run = command('renovate')
     .arg('repositories', arg.string().variadic().default([]))
@@ -78,9 +78,21 @@ function createProgram(
         .describe(
           description
             .replace(
-              regEx(/\[(?<label>[^\]]+)\]\((?<url>https?:\/\/[^)]+)\)/g),
-              (_match, label: string, url: string) =>
-                hyperlinks ? osc8(url, label) : label,
+              regEx(
+                /\[(?<label>[^\]]+)\]\((?<url>https?:\/\/[^)]+)\)|`(?<code>[^`\r\n]+)`/g,
+              ),
+              (match, label: string, url: string, code: string) => {
+                if (code !== undefined) {
+                  return render?.color.isColorSupported
+                    ? render.color.yellow(code)
+                    : match;
+                }
+                const styled =
+                  render?.color.underline(render.color.cyan(label)) ?? label;
+                return render?.isHyperlinkSupported
+                  ? osc8(url, styled)
+                  : styled;
+              },
             )
             .replace(regEx(/\s*\r?\n\s*/g), ' '),
         )
@@ -203,13 +215,17 @@ export async function runRenovateCli(
   adapter = createAdapter(),
 ): Promise<number> {
   const argv = normalizeArgs([...adapter.argv]);
-  const { isHyperlinkSupported } = resolveRenderContext(argv, {
+  const forceColor = adapter.env.FORCE_COLOR;
+  const colorEnabled =
+    forceColor === undefined ? adapter.isTTY : forceColor !== '0';
+  const render = resolveRenderContext(argv, {
     env: adapter.env,
     isTTY: adapter.isTTY,
+    color: !adapter.env.NO_COLOR && colorEnabled,
     builtins: { json: 'off', quiet: 'off' },
   });
   try {
-    await createProgram(run, isHyperlinkSupported).run({
+    await createProgram(run, render).run({
       adapter: {
         ...adapter,
         argv: [...adapter.argv.slice(0, 2), ...argv],
