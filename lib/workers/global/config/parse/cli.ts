@@ -124,7 +124,8 @@ function createProgram(
           out.setExitCode(code);
         }
       }),
-    );
+    )
+    .completions({ rootMode: 'surface' });
 }
 
 function normalizeArgs(input: string[]): string[] {
@@ -225,7 +226,10 @@ export async function runRenovateCli(
     builtins: { json: 'off', quiet: 'off' },
   });
   try {
-    await createProgram(run, render).run({
+    await createProgram(
+      run,
+      argv[0] === 'completions' ? undefined : render,
+    ).run({
       adapter: {
         ...adapter,
         argv: [...adapter.argv.slice(0, 2), ...argv],

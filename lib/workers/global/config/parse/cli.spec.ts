@@ -357,6 +357,26 @@ describe('workers/global/config/parse/cli', () => {
   });
 
   describe('CLI dispatch', () => {
+    it('generates clean Zsh completions for root flags without running the worker', async () => {
+      const run = vi.fn();
+      const chunks: string[] = [];
+      const adapter = createTestAdapter({
+        argv: ['node', 'renovate', 'completions', 'zsh'],
+        isTTY: true,
+        env: { FORCE_COLOR: '1', FORCE_HYPERLINKS: '1' },
+        stdout: (chunk) => {
+          chunks.push(chunk);
+        },
+      });
+
+      await expect(cli.runRenovateCli(run, adapter)).resolves.toBe(0);
+      expect(run).not.toHaveBeenCalled();
+      const script = chunks.join('');
+      expect(script).toContain('#compdef renovate');
+      expect(script).toContain('--platform[');
+      expect(script).toBe(stripVTControlCharacters(script));
+    });
+
     it('hands parsed config to the default action and returns its exit status', async () => {
       const run = vi.fn().mockResolvedValue(5);
       const adapter = createTestAdapter({
