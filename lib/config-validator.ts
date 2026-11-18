@@ -367,7 +367,8 @@ interface PackageJson {
     return token;
   });
   await cli('renovate-config-validator')
-    .version(pkg.version)
+    .manifest(pkg)
+    .links()
     .default(validateFiles)
     .run({ adapter: { ...adapter, argv } });
 })().catch((e) => {

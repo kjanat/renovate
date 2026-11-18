@@ -1,3 +1,4 @@
+import { isFunction } from '@sindresorhus/is';
 import { pkg } from '../../../../expose.ts';
 import { logger } from '../../../../logger/index.ts';
 import { DockerDatasource } from '../../../../modules/datasource/docker/index.ts';
@@ -356,14 +357,21 @@ describe('workers/global/config/parse/cli', () => {
   describe('.parseEarlyFlags(argv)', () => {
     it('prints version and exits when --version is passed', async () => {
       const previousExitCode = process.exitCode;
-      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+      const stdoutSpy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation((_chunk, encoding, callback) => {
+          const done = isFunction(encoding) ? encoding : callback;
+          done?.();
+          return true;
+        });
 
       await expect(cli.parseEarlyFlags([...argv, '--version'])).resolves.toBe(
         true,
       );
 
-      expect(stdoutSpy).toHaveBeenCalledExactlyOnceWith(
+      expect(stdoutSpy).toHaveBeenCalledWith(
         expect.stringContaining(pkg.version),
+        expect.any(Function),
       );
       expect(process.exitCode).toBe(0);
 

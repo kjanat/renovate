@@ -1,5 +1,6 @@
 import type { FlagBuilder, FlagConfig } from '@kjanat/dreamcli';
 import { arg, cli, command, flag } from '@kjanat/dreamcli';
+import { ExitError, createAdapter } from '@kjanat/dreamcli/runtime';
 import { isPlainObject, isString } from '@sindresorhus/is';
 import { flatDependencyDashboardOptions } from '../../../../config/migrations/custom/dependency-dashboard-migration.ts';
 import { getOptions } from '../../../../config/options/index.ts';
@@ -74,7 +75,8 @@ function createProgram(
   }
   return cli('renovate')
     .builtins({ json: 'off', quiet: 'off' })
-    .version(pkg.version)
+    .manifest(pkg)
+    .links()
     .default(
       run.action(({ flags, args, sources }) => {
         const config: Record<string, unknown> = {};
@@ -186,10 +188,23 @@ export async function parseEarlyFlags(
       break;
     }
     if (['-h', '--help', '--version', '-V'].includes(token)) {
-      const result = await createProgram(undefined, false).execute([token]);
-      process.stdout.write(result.stdout.join(''));
-      process.stderr.write(result.stderr.join(''));
-      process.exitCode = result.exitCode;
+      const adapter = createAdapter();
+      try {
+        await createProgram(undefined, false).run({
+          adapter: {
+            ...adapter,
+            argv: [...adapter.argv.slice(0, 2), token],
+            exit: (code) => {
+              throw new ExitError(code);
+            },
+          },
+        });
+      } catch (err) {
+        if (!(err instanceof ExitError)) {
+          throw err;
+        }
+        process.exitCode = err.code;
+      }
       return true;
     }
   }
