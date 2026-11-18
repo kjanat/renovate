@@ -175,9 +175,7 @@ async function collectCoverage(args: CliArgs): Promise<CoverageInfo[]> {
   return coverage;
 }
 
-async function parseCliArgs(): Promise<CliArgs | undefined> {
-  let args: CliArgs | undefined;
-
+async function runCheckCli(): Promise<void> {
   const check = command('check')
     .description('Fast local CI check script')
     .arg(
@@ -204,26 +202,24 @@ async function parseCliArgs(): Promise<CliArgs | undefined> {
         .default('coverage')
         .describe('Directory for the coverage report'),
     )
-    .action(({ args: { targets }, flags: opts }) => {
-      args = {
-        all: opts.all ?? false,
-        fix: opts.fix ?? false,
-        noTest: !opts.test,
-        coverageDir: opts.coverageDir,
-        targets,
-      };
+    .action(async ({ args: { targets }, flags: opts, out }) => {
+      try {
+        const exitCode = await main({
+          all: opts.all,
+          fix: opts.fix,
+          noTest: !opts.test,
+          coverageDir: opts.coverageDir,
+          targets,
+        });
+        out.setExitCode(exitCode);
+      } finally {
+        if (isTTY) {
+          process.stdout.write(ANSI.SHOW_CURSOR);
+        }
+      }
     });
 
-  const result = await cli('pnpm check')
-    .default(check)
-    .execute(process.argv.slice(2));
-  if (!args) {
-    process.stdout.write(result.stdout.join(''));
-    process.stderr.write(result.stderr.join(''));
-    process.exitCode = result.exitCode;
-  }
-
-  return args;
+  await cli('pnpm check').default(check).run();
 }
 
 async function buildTestChecks(args: CliArgs): Promise<ParallelCheck[]> {
@@ -269,12 +265,8 @@ async function buildTestChecks(args: CliArgs): Promise<ParallelCheck[]> {
   ];
 }
 
-async function main(): Promise<void> {
+async function main(args: CliArgs): Promise<number> {
   const startTime = Date.now();
-  const args = await parseCliArgs();
-  if (!args) {
-    return;
-  }
   const testChecks = await buildTestChecks(args);
 
   let fixChecks: ParallelCheck[];
@@ -388,20 +380,16 @@ async function main(): Promise<void> {
   printCoverageReport(coverage);
   printFailedOutputs(progress.results);
 
-  if (isTTY) {
-    process.stdout.write(ANSI.SHOW_CURSOR);
-  } else {
+  if (!isTTY) {
     const totalDuration = (Date.now() - startTime) / 1000;
     console.log('');
     console.log(`Total: ${formatDuration(totalDuration)}`);
   }
 
-  if (hasFailure) {
-    process.exit(1);
-  }
+  return hasFailure ? 1 : 0;
 }
 
-main().catch((err) => {
+runCheckCli().catch((err) => {
   if (isTTY) {
     process.stdout.write(ANSI.SHOW_CURSOR);
   }

@@ -54,7 +54,7 @@ describe('workers/global/config/parse/cli', () => {
       argv.push('--config-migration');
       argv.push('badvalue');
       await expect(cli.getConfig(argv)).rejects.toThrow(
-        'Expected a valid boolean value',
+        'Invalid boolean value',
       );
     });
 
@@ -78,6 +78,23 @@ describe('workers/global/config/parse/cli', () => {
       await expect(cli.getConfig(argv)).resolves.toEqual({
         configMigration: false,
       });
+    });
+
+    it('preserves an empty explicit boolean as true', async () => {
+      argv.push('--config-migration=');
+      await expect(cli.getConfig(argv)).resolves.toEqual({
+        configMigration: true,
+      });
+    });
+
+    it('parses integer configuration flags', async () => {
+      argv.push('--pr-hourly-limit=3');
+      await expect(cli.getConfig(argv)).resolves.toEqual({ prHourlyLimit: 3 });
+    });
+
+    it('rejects a partially numeric integer', async () => {
+      argv.push('--pr-hourly-limit=3oops');
+      await expect(cli.getConfig(argv)).rejects.toThrow('Invalid number value');
     });
 
     it('supports list single', async () => {
@@ -247,7 +264,7 @@ describe('workers/global/config/parse/cli', () => {
         argv.push('--dependency-dashboard-autoclose=yes');
 
         await expect(cli.getConfig(argv)).rejects.toThrow(
-          'Expected a valid boolean value',
+          'Invalid boolean value',
         );
       });
     });

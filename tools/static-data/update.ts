@@ -10,7 +10,10 @@ import { miseRegistry } from './sources/mise-registry.ts';
 import { nodeSchedule } from './sources/node-schedule.ts';
 import type { StaticDataSource } from './types.ts';
 
-const sources: StaticDataSource<unknown, object>[] = [
+const sources: [
+  StaticDataSource<unknown, object>,
+  ...StaticDataSource<unknown, object>[],
+] = [
   distroInfo('ubuntu'),
   distroInfo('debian'),
   javaLtsVersions,
@@ -18,19 +21,14 @@ const sources: StaticDataSource<unknown, object>[] = [
   miseRegistry,
   nodeSchedule,
 ];
+const [firstSource, ...otherSources] = sources;
 
 const update = command('update')
   .description('Update the static data used by Renovate')
   .arg(
     'sources',
     arg
-      .custom((value) => {
-        const name = String(value);
-        if (!sources.some((source) => source.name === name)) {
-          throw new Error('Expected a known static data source');
-        }
-        return name;
-      })
+      .enum([firstSource.name, ...otherSources.map(({ name }) => name)])
       .variadic()
       .default([])
       .describe('Static data sources to update (default: all)'),

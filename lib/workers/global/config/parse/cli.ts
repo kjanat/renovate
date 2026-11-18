@@ -1,5 +1,6 @@
+import type { FlagBuilder, FlagConfig } from '@kjanat/dreamcli';
 import { arg, cli, command, flag } from '@kjanat/dreamcli';
-import { isPlainObject } from '@sindresorhus/is';
+import { isPlainObject, isString } from '@sindresorhus/is';
 import { flatDependencyDashboardOptions } from '../../../../config/migrations/custom/dependency-dashboard-migration.ts';
 import { getOptions } from '../../../../config/options/index.ts';
 import type { AllConfig } from '../../../../config/types.ts';
@@ -29,6 +30,25 @@ const cliOptions = new Map(
   [...options, ...legacyOptions].map((option) => [getCliName(option), option]),
 );
 
+function optionFlag(type: string): FlagBuilder<FlagConfig> {
+  switch (type) {
+    case 'boolean':
+      return flag.boolean();
+    case 'integer':
+      return flag.number({ int: true });
+    case 'string':
+      return flag.string();
+    default:
+      return flag.custom((value) => {
+        try {
+          return coersions[type](String(value));
+        } catch {
+          throw new Error(`Expected a valid ${type} value`);
+        }
+      });
+  }
+}
+
 function createProgram(
   onConfig?: (flags: Record<string, unknown>, repositories: string[]) => void,
   includeLegacy = true,
@@ -49,29 +69,26 @@ function createProgram(
     }
     run = run.flag(
       spelling.slice(2),
-      flag
-        .custom((value) => {
-          try {
-            return coersions[type](String(value));
-          } catch {
-            throw new Error(`Expected a valid ${type} value`);
-          }
-        })
-        .describe(description)
-        .sensitive(),
+      optionFlag(type).describe(description).sensitive(),
     );
   }
   return cli('renovate')
     .builtins({ json: 'off', quiet: 'off' })
     .version(pkg.version)
     .default(
-      run.action(({ flags, args }) => {
-        const config = Object.fromEntries(
-          Array.from(cliOptions, ([spelling, { name }]) => [
-            name,
-            flags[spelling.slice(2)],
-          ]),
-        );
+      run.action(({ flags, args, sources }) => {
+        const config: Record<string, unknown> = {};
+        for (const [spelling, { name, type }] of cliOptions) {
+          const key = spelling.slice(2);
+          if (sources.flags[key]?.stage !== 'cli') {
+            continue;
+          }
+          const value = flags[key];
+          config[name] =
+            type === 'string' && isString(value)
+              ? coersions.string(value)
+              : value;
+        }
         onConfig?.(config, args.repositories);
       }),
     );
@@ -91,11 +108,18 @@ function normalizeArgs(input: string[]): string[] {
       output.push(...argv.slice(i));
       break;
     }
+    if (
+      token.endsWith('=') &&
+      cliOptions.get(token.slice(0, -1))?.type === 'boolean'
+    ) {
+      output.push(`${token}true`);
+      continue;
+    }
     const option = cliOptions.get(token);
     if (option?.type === 'boolean') {
       const value = argv[i + 1];
       if (value !== undefined && !value.startsWith('-')) {
-        output.push(`${token}=${value}`);
+        output.push(`${token}=${value || 'true'}`);
         i++;
       } else {
         output.push(`${token}=true`);
