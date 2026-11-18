@@ -11,12 +11,16 @@ import { ExitError, createAdapter } from '@kjanat/dreamcli/runtime';
 import { isPlainObject, isString } from '@sindresorhus/is';
 import { flatDependencyDashboardOptions } from '../../../../config/migrations/custom/dependency-dashboard-migration.ts';
 import { getOptions } from '../../../../config/options/index.ts';
-import type { AllConfig } from '../../../../config/types.ts';
+import type { AllConfig, RenovateOptions } from '../../../../config/types.ts';
 import { pkg } from '../../../../expose.ts';
 import { logger } from '../../../../logger/index.ts';
 import { coerceObject } from '../../../../util/object.ts';
 import { regEx } from '../../../../util/regex.ts';
-import { coersions } from './coersions.ts';
+import {
+  decodeConfigString,
+  parseConfigList,
+  parseConfigObject,
+} from './coersions.ts';
 import type { ParseConfigOptions } from './types.ts';
 
 export function getCliName(option: ParseConfigOptions): string {
@@ -38,20 +42,39 @@ const cliOptions = new Map(
   [...options, ...legacyOptions].map((option) => [getCliName(option), option]),
 );
 
-function optionFlag(type: string): FlagBuilder<FlagConfig> {
+function optionFlag(type: RenovateOptions['type']): FlagBuilder<FlagConfig> {
   switch (type) {
     case 'boolean':
       return flag.boolean();
     case 'integer':
       return flag.number({ int: true });
     case 'string':
-      return flag.string();
-    default:
+      return flag.string().standard({
+        '~standard': {
+          version: 1,
+          vendor: 'renovate',
+          validate: (value) =>
+            isString(value)
+              ? { value: decodeConfigString(value) }
+              : { issues: [{ message: 'Expected a string' }] },
+        },
+      });
+    case 'array':
       return flag.custom((value) => {
+        if (!isString(value)) {
+          throw new Error('Expected a list of values');
+        }
+        return parseConfigList(value);
+      });
+    case 'object':
+      return flag.custom((value) => {
+        if (!isString(value)) {
+          throw new Error('Expected a valid object value');
+        }
         try {
-          return coersions[type](String(value));
+          return parseConfigObject(value);
         } catch {
-          throw new Error(`Expected a valid ${type} value`);
+          throw new Error('Expected a valid object value');
         }
       });
   }
@@ -106,16 +129,12 @@ function createProgram(
     .default(
       run.action(async ({ flags, args, sources, out }) => {
         const config: Record<string, unknown> = {};
-        for (const [spelling, { name, type }] of cliOptions) {
+        for (const [spelling, { name }] of cliOptions) {
           const key = spelling.slice(2);
           if (sources.flags[key]?.stage !== 'cli') {
             continue;
           }
-          const value = flags[key];
-          config[name] =
-            type === 'string' && isString(value)
-              ? coersions.string(value)
-              : value;
+          config[name] = flags[key];
         }
         const code = await onConfig(
           resolveCliConfig(config, args.repositories),
