@@ -1,4 +1,5 @@
 import { isFunction } from '@sindresorhus/is';
+import { execa } from 'execa';
 import { pkg } from '../../../../expose.ts';
 import { logger } from '../../../../logger/index.ts';
 import { DockerDatasource } from '../../../../modules/datasource/docker/index.ts';
@@ -355,6 +356,26 @@ describe('workers/global/config/parse/cli', () => {
   });
 
   describe('.parseEarlyFlags(argv)', () => {
+    it('keeps multiline option prose in the description column', async () => {
+      const { stdout } = await execa('node', ['lib/renovate.ts', '--help'], {
+        env: { NO_COLOR: '1' },
+      });
+      const lines = stdout.split('\n');
+      const start = lines.findIndex((line) =>
+        line.includes('--allowed-unsafe-executions'),
+      );
+      const end = lines.findIndex((line) =>
+        line.includes('--assign-automerge'),
+      );
+      const description = lines.slice(start + 1, end);
+
+      expect(start).toBeGreaterThan(-1);
+      expect(description.length).toBeGreaterThan(1);
+      expect(description.every((line) => line.startsWith(' '.repeat(20)))).toBe(
+        true,
+      );
+    });
+
     it('prints version and exits when --version is passed', async () => {
       const previousExitCode = process.exitCode;
       const stdoutSpy = vi

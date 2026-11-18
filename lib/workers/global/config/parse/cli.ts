@@ -70,7 +70,9 @@ function createProgram(
     }
     run = run.flag(
       spelling.slice(2),
-      optionFlag(type).describe(description).sensitive(),
+      optionFlag(type)
+        .describe(description.replace(regEx(/\s*\r?\n\s*/g), ' '))
+        .sensitive(),
     );
   }
   return cli('renovate')
