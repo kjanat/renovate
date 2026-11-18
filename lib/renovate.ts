@@ -9,28 +9,29 @@ void (async (): Promise<void> => {
   const otel = await import('./instrumentation/index.ts');
   otel.init();
 
-  const logger = await import('./logger/index.ts');
-  /* v8 ignore next -- not easily testable */
-  process.on('unhandledRejection', (err) => {
-    logger.logger.error({ err }, 'unhandledRejection');
-    process.exitCode ??= 1;
-  });
-  await logger.init();
+  try {
+    const logger = await import('./logger/index.ts');
+    /* v8 ignore next -- not easily testable */
+    process.on('unhandledRejection', (err) => {
+      logger.logger.error({ err }, 'unhandledRejection');
+      process.exitCode ??= 1;
+    });
+    await logger.init();
 
-  (await import('./proxy.ts')).bootstrap();
+    (await import('./proxy.ts')).bootstrap();
 
-  // prints and exits the process if --version or --help is passed
-  const { parseEarlyFlags } =
-    await import('./workers/global/config/parse/cli.ts');
+    const { parseEarlyFlags } =
+      await import('./workers/global/config/parse/cli.ts');
 
-  if (await parseEarlyFlags()) {
+    if (await parseEarlyFlags()) {
+      return;
+    }
+
+    const { start } = await import('./workers/global/index.ts');
+    process.exitCode = await otel.instrument('run', start);
+  } finally {
     await otel.shutdown();
-    return;
   }
-
-  const { start } = await import('./workers/global/index.ts');
-  process.exitCode = await otel.instrument('run', start);
-  await otel.shutdown(); //gracefully shutdown OpenTelemetry
 
   /* v8 ignore if -- no test required */
   if (process.env.RENOVATE_X_HARD_EXIT) {

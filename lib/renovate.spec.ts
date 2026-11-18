@@ -24,6 +24,7 @@ describe('renovate', () => {
       await vi.importActual('./renovate.ts');
       await waiter;
       expect(renovateWorker.start).toHaveBeenCalledTimes(earlyExit ? 0 : 1);
+      expect(otel.shutdown).toHaveBeenCalledTimes(1);
     },
   );
 });
