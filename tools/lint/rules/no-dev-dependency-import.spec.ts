@@ -8,7 +8,7 @@ const ruleTester = new RuleTester({
   languageOptions: { parserOptions: { lang: 'ts' } },
 });
 
-// `vitest` is a real `devDependencies` entry; `commander` is a real
+// `vitest` is a real `devDependencies` entry; `@kjanat/dreamcli` is a real
 // `dependencies` entry. Both are read from this repo's package.json.
 ruleTester.run('no-dev-dependency-import', rule, {
   valid: [
@@ -16,7 +16,7 @@ ruleTester.run('no-dev-dependency-import', rule, {
     `import { foo } from './foo.ts';`,
     `import { foo } from '/foo.ts';`,
     // a real production dependency
-    `import { Command } from 'commander';`,
+    `import { command } from '@kjanat/dreamcli';`,
     // a devDependency is fine as a type-only import
     `import type { Something } from 'vitest';`,
     // a devDependency is fine when every specifier is type-only

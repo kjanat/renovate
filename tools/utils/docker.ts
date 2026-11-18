@@ -4,7 +4,6 @@ import path from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import type { SemVer } from 'semver';
 import { logger } from '../../lib/logger/index.ts';
-import { toMs } from '../../lib/util/pretty-time.ts';
 import { commandError, exec } from './exec.ts';
 
 const file = 'tools/docker/bake.hcl';
@@ -24,7 +23,7 @@ export async function bake(
     platform?: string;
     version?: SemVer;
     args?: string[];
-    delay?: string;
+    delayMs?: number;
     tries?: number;
     channel?: string | false;
   },
@@ -78,10 +77,9 @@ export async function bake(
       throw commandError(message);
     }
     logger.warn(message);
-    const delay = opts.delay ? toMs(opts.delay) : null;
-    if (delay) {
-      logger.info(`Retrying in ${opts.delay} ...`);
-      await setTimeout(delay);
+    if (opts.delayMs) {
+      logger.info(`Retrying in ${opts.delayMs}ms ...`);
+      await setTimeout(opts.delayMs);
     }
   }
 

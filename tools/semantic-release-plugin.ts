@@ -66,7 +66,7 @@ export async function prepare(
     version: new SemVer(version),
     channel: branch.channel,
     tries: 3,
-    delay: '30s',
+    delayMs: 30_000,
   });
 }
 

@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { cli, command, flag } from '@kjanat/dreamcli';
 import { quote } from 'shlex';
 import { init, logger } from '../lib/logger/index.ts';
 import { getDatasourceList } from '../lib/modules/datasource/index.ts';
@@ -154,14 +154,19 @@ process.on('unhandledRejection', (err) => {
   process.exit(-1);
 });
 
-const program = new Command('node tools/sync-org-issue-fields.ts')
+const sync = command('fields')
   .description('Check that datasource/manager/platform org issue fields exist.')
-  .option('--org <name>', `Organization to query`, defaultOrg)
-  .option(
-    '--show-commands',
-    'Print gh api commands for any missing fields or options',
+  .flag(
+    'org',
+    flag.string().default(defaultOrg).describe('Organization to query'),
   )
-  .action(async (options: CliOptions) => {
+  .flag(
+    'showCommands',
+    flag
+      .boolean()
+      .describe('Print gh api commands for any missing fields or options'),
+  )
+  .action(async ({ flags: options }) => {
     const expectedFields = getExpectedIssueFields();
     const existingFields = await getOrgIssueFields(options.org);
 
@@ -215,4 +220,4 @@ const program = new Command('node tools/sync-org-issue-fields.ts')
     process.exitCode = 1;
   });
 
-void program.parseAsync();
+await cli('node tools/sync-org-issue-fields.ts').default(sync).run();

@@ -30,81 +30,93 @@ describe('workers/global/config/parse/cli', () => {
   });
 
   describe('.getConfig(argv)', () => {
-    it('returns empty argv', () => {
-      expect(cli.getConfig(argv)).toEqual({});
+    it('returns empty argv', async () => {
+      await expect(cli.getConfig(argv)).resolves.toEqual({});
     });
 
-    it('supports boolean no value', () => {
+    it('supports boolean no value', async () => {
       argv.push('--config-migration');
-      expect(cli.getConfig(argv)).toEqual({ configMigration: true });
+      await expect(cli.getConfig(argv)).resolves.toEqual({
+        configMigration: true,
+      });
       argv = argv.slice(0, -1);
     });
 
-    it('supports boolean space true', () => {
+    it('supports boolean space true', async () => {
       argv.push('--config-migration');
       argv.push('true');
-      expect(cli.getConfig(argv)).toEqual({ configMigration: true });
+      await expect(cli.getConfig(argv)).resolves.toEqual({
+        configMigration: true,
+      });
     });
 
-    it('throws exception for invalid boolean value', () => {
+    it('throws exception for invalid boolean value', async () => {
       argv.push('--config-migration');
       argv.push('badvalue');
-      expect(() => cli.getConfig(argv)).toThrow(
-        Error(
-          "Invalid boolean value: expected 'true' or 'false', but got 'badvalue'",
-        ),
+      await expect(cli.getConfig(argv)).rejects.toThrow(
+        'Expected a valid boolean value',
       );
     });
 
-    it('supports boolean space false', () => {
+    it('supports boolean space false', async () => {
       argv.push('--config-migration');
       argv.push('false');
-      expect(cli.getConfig(argv)).toEqual({ configMigration: false });
+      await expect(cli.getConfig(argv)).resolves.toEqual({
+        configMigration: false,
+      });
     });
 
-    it('supports boolean equals true', () => {
+    it('supports boolean equals true', async () => {
       argv.push('--config-migration=true');
-      expect(cli.getConfig(argv)).toEqual({ configMigration: true });
+      await expect(cli.getConfig(argv)).resolves.toEqual({
+        configMigration: true,
+      });
     });
 
-    it('supports boolean equals false', () => {
+    it('supports boolean equals false', async () => {
       argv.push('--config-migration=false');
-      expect(cli.getConfig(argv)).toEqual({ configMigration: false });
+      await expect(cli.getConfig(argv)).resolves.toEqual({
+        configMigration: false,
+      });
     });
 
-    it('supports list single', () => {
+    it('supports list single', async () => {
       argv.push('--labels=a');
-      expect(cli.getConfig(argv)).toEqual({ labels: ['a'] });
+      await expect(cli.getConfig(argv)).resolves.toEqual({ labels: ['a'] });
     });
 
-    it('supports list multiple', () => {
+    it('supports list multiple', async () => {
       argv.push('--labels=a,b,c');
-      expect(cli.getConfig(argv)).toEqual({ labels: ['a', 'b', 'c'] });
+      await expect(cli.getConfig(argv)).resolves.toEqual({
+        labels: ['a', 'b', 'c'],
+      });
     });
 
-    it('supports base branch patterns', () => {
+    it('supports base branch patterns', async () => {
       argv.push('--base-branch-patterns=main,develop');
-      expect(cli.getConfig(argv)).toEqual({
+      await expect(cli.getConfig(argv)).resolves.toEqual({
         baseBranchPatterns: ['main', 'develop'],
       });
     });
 
-    it('supports string', () => {
+    it('supports string', async () => {
       argv.push('--token=a');
-      expect(cli.getConfig(argv)).toEqual({ token: 'a' });
+      await expect(cli.getConfig(argv)).resolves.toEqual({ token: 'a' });
     });
 
-    it('supports repositories', () => {
+    it('supports repositories', async () => {
       argv.push('foo');
       argv.push('bar');
-      expect(cli.getConfig(argv)).toEqual({ repositories: ['foo', 'bar'] });
+      await expect(cli.getConfig(argv)).resolves.toEqual({
+        repositories: ['foo', 'bar'],
+      });
     });
 
-    it('parses json lists correctly', () => {
+    it('parses json lists correctly', async () => {
       argv.push(
         `--host-rules=[{"matchHost":"docker.io","hostType":"${DockerDatasource.id}","username":"user","password":"password"}]`,
       );
-      expect(cli.getConfig(argv)).toEqual({
+      await expect(cli.getConfig(argv)).resolves.toEqual({
         hostRules: [
           {
             matchHost: 'docker.io',
@@ -116,16 +128,16 @@ describe('workers/global/config/parse/cli', () => {
       });
     });
 
-    it('parses [] correctly as empty list of hostRules', () => {
+    it('parses [] correctly as empty list of hostRules', async () => {
       argv.push(`--host-rules=[]`);
-      expect(cli.getConfig(argv)).toEqual({
+      await expect(cli.getConfig(argv)).resolves.toEqual({
         hostRules: [],
       });
     });
 
-    it('parses an empty string correctly as empty list of hostRules', () => {
+    it('parses an empty string correctly as empty list of hostRules', async () => {
       argv.push(`--host-rules=`);
-      expect(cli.getConfig(argv)).toEqual({
+      await expect(cli.getConfig(argv)).resolves.toEqual({
         hostRules: [],
       });
     });
@@ -148,13 +160,13 @@ describe('workers/global/config/parse/cli', () => {
       ${'--dependency-dashboard'}       | ${{ dependencyDashboard: { enabled: true } }}
       ${'--dependency-dashboard=true'}  | ${{ dependencyDashboard: { enabled: true } }}
       ${'--dependency-dashboard=false'} | ${{ dependencyDashboard: { enabled: false } }}
-    `('"$arg" -> $config', ({ arg, config }) => {
+    `('"$arg" -> $config', async ({ arg, config }) => {
       argv.push(arg);
-      expect(cli.getConfig(argv)).toMatchObject(config);
+      await expect(cli.getConfig(argv)).resolves.toMatchObject(config);
     });
 
     describe('migrates the flat Dependency Dashboard flags', () => {
-      it('moves them into dependencyDashboard with their old types', () => {
+      it('moves them into dependencyDashboard with their old types', async () => {
         argv.push(
           '--customize-dashboard={"repoProblemsHeader":"problems"}',
           '--dependency-dashboard-autoclose',
@@ -167,7 +179,7 @@ describe('workers/global/config/parse/cli', () => {
           '--dependency-dashboard-title=title',
         );
 
-        expect(cli.getConfig(argv)).toEqual({
+        await expect(cli.getConfig(argv)).resolves.toEqual({
           dependencyDashboard: {
             customize: { repoProblemsHeader: 'problems' },
             autoclose: true,
@@ -196,146 +208,170 @@ describe('workers/global/config/parse/cli', () => {
         );
       });
 
-      it('prefers fields set in --dependency-dashboard', () => {
+      it('prefers fields set in --dependency-dashboard', async () => {
         argv.push(
           '--dependency-dashboard={"footer":"new","enabled":true}',
           '--dependency-dashboard-footer=old',
           '--dependency-dashboard-title=title',
         );
 
-        expect(cli.getConfig(argv)).toEqual({
+        await expect(cli.getConfig(argv)).resolves.toEqual({
           dependencyDashboard: { enabled: true, footer: 'new', title: 'title' },
         });
       });
 
-      it('keeps a boolean --dependency-dashboard', () => {
+      it('keeps a boolean --dependency-dashboard', async () => {
         argv.push('--dependency-dashboard', '--dependency-dashboard-footer=f');
 
-        expect(cli.getConfig(argv)).toEqual({
+        await expect(cli.getConfig(argv)).resolves.toEqual({
           dependencyDashboard: { enabled: true, footer: 'f' },
         });
       });
 
-      it('leaves a --dependency-dashboard which is not an object', () => {
+      it('leaves a --dependency-dashboard which is not an object', async () => {
         argv.push(
           '--dependency-dashboard=5',
           '--dependency-dashboard-footer=footer',
         );
 
-        expect(cli.getConfig(argv)).toEqual({ dependencyDashboard: 5 });
+        await expect(cli.getConfig(argv)).resolves.toEqual({
+          dependencyDashboard: 5,
+        });
         expect(logger.warn).toHaveBeenCalledExactlyOnceWith(
           { oldFlags: ['--dependency-dashboard-footer'] },
           'Could not migrate cli config into --dependency-dashboard, as it is not an object',
         );
       });
 
-      it('throws for an invalid old value', () => {
+      it('throws for an invalid old value', async () => {
         argv.push('--dependency-dashboard-autoclose=yes');
 
-        expect(() => cli.getConfig(argv)).toThrow(
-          "Invalid boolean value: expected 'true' or 'false', but got 'yes'",
+        await expect(cli.getConfig(argv)).rejects.toThrow(
+          'Expected a valid boolean value',
         );
       });
     });
 
-    it('parses json object correctly when empty', () => {
+    it('parses json object correctly when empty', async () => {
       argv.push(`--onboarding-config=`);
-      expect(cli.getConfig(argv)).toEqual({
+      await expect(cli.getConfig(argv)).resolves.toEqual({
         onboardingConfig: {},
       });
     });
 
-    it('parses json {} object correctly', () => {
+    it('parses json {} object correctly', async () => {
       argv.push(`--onboarding-config={}`);
-      expect(cli.getConfig(argv)).toEqual({
+      await expect(cli.getConfig(argv)).resolves.toEqual({
         onboardingConfig: {},
       });
     });
 
-    it('parses json object correctly', () => {
+    it('parses json object correctly', async () => {
       argv.push(`--onboarding-config={"extends": ["config:recommended"]}`);
-      expect(cli.getConfig(argv)).toEqual({
+      await expect(cli.getConfig(argv)).resolves.toEqual({
         onboardingConfig: {
           extends: ['config:recommended'],
         },
       });
     });
 
-    it('throws exception for invalid json object', () => {
+    it('throws exception for invalid json object', async () => {
       argv.push('--onboarding-config=Hello_World');
-      expect(() => cli.getConfig(argv)).toThrow(
-        Error("Invalid JSON value: 'Hello_World'"),
+      await expect(cli.getConfig(argv)).rejects.toThrow(
+        'Expected a valid object value',
       );
     });
 
-    it('dryRun boolean true', () => {
+    it('dryRun boolean true', async () => {
       argv.push('--dry-run=true');
-      expect(cli.getConfig(argv)).toEqual({ dryRun: 'full' });
+      await expect(cli.getConfig(argv)).resolves.toEqual({ dryRun: 'full' });
     });
 
-    it('dryRun no value', () => {
+    it('dryRun no value', async () => {
       argv.push('--dry-run');
-      expect(cli.getConfig(argv)).toEqual({ dryRun: 'full' });
+      await expect(cli.getConfig(argv)).resolves.toEqual({ dryRun: 'full' });
     });
 
-    it('dryRun boolean false', () => {
+    it('dryRun boolean false', async () => {
       argv.push('--dry-run=false');
-      expect(cli.getConfig(argv)).toEqual({ dryRun: null });
+      await expect(cli.getConfig(argv)).resolves.toEqual({ dryRun: null });
     });
 
-    it('dryRun  null', () => {
+    it('dryRun  null', async () => {
       argv.push('--dry-run=null');
-      expect(cli.getConfig(argv)).toEqual({ dryRun: null });
+      await expect(cli.getConfig(argv)).resolves.toEqual({ dryRun: null });
     });
 
-    it('requireConfig boolean true', () => {
+    it('requireConfig boolean true', async () => {
       argv.push('--require-config=true');
-      expect(cli.getConfig(argv)).toEqual({ requireConfig: 'required' });
+      await expect(cli.getConfig(argv)).resolves.toEqual({
+        requireConfig: 'required',
+      });
     });
 
-    it('requireConfig no value', () => {
+    it('requireConfig no value', async () => {
       argv.push('--require-config');
-      expect(cli.getConfig(argv)).toEqual({ requireConfig: 'required' });
+      await expect(cli.getConfig(argv)).resolves.toEqual({
+        requireConfig: 'required',
+      });
     });
 
-    it('requireConfig boolean false', () => {
+    it('requireConfig boolean false', async () => {
       argv.push('--require-config=false');
-      expect(cli.getConfig(argv)).toEqual({ requireConfig: 'optional' });
+      await expect(cli.getConfig(argv)).resolves.toEqual({
+        requireConfig: 'optional',
+      });
     });
 
-    it('dryRun keeps a value that is already current', () => {
+    it('dryRun keeps a value that is already current', async () => {
       argv.push('--dry-run=extract');
-      expect(cli.getConfig(argv)).toEqual({ dryRun: 'extract' });
+      await expect(cli.getConfig(argv)).resolves.toEqual({ dryRun: 'extract' });
     });
 
-    it('requireConfig keeps a value that is already current', () => {
+    it('requireConfig keeps a value that is already current', async () => {
       argv.push('--require-config=ignored');
-      expect(cli.getConfig(argv)).toEqual({ requireConfig: 'ignored' });
+      await expect(cli.getConfig(argv)).resolves.toEqual({
+        requireConfig: 'ignored',
+      });
     });
   });
 
   describe('.parseEarlyFlags(argv)', () => {
-    it('prints version and exits when --version is passed', () => {
-      const exitSpy = vi
-        .spyOn(process, 'exit')
-        .mockImplementation((() => undefined) as never);
+    it('prints version and exits when --version is passed', async () => {
+      const previousExitCode = process.exitCode;
       const stdoutSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 
-      cli.parseEarlyFlags([...argv, '--version']);
+      await expect(cli.parseEarlyFlags([...argv, '--version'])).resolves.toBe(
+        true,
+      );
 
       expect(stdoutSpy).toHaveBeenCalledExactlyOnceWith(
         expect.stringContaining(pkg.version),
       );
-      expect(exitSpy).toHaveBeenCalledExactlyOnceWith(0);
+      expect(process.exitCode).toBe(0);
 
       stdoutSpy.mockRestore();
-      exitSpy.mockRestore();
+      process.exitCode = previousExitCode;
     });
 
-    it('does not error when --dry-run is the last argument', () => {
-      expect(() =>
+    it('does not error when --dry-run is the last argument', async () => {
+      await expect(
         cli.parseEarlyFlags([...argv, 'myrepo', '--dry-run']),
-      ).not.toThrow();
+      ).resolves.toBe(false);
+    });
+
+    it('leaves arguments after the separator untouched', async () => {
+      argv.push('--', '--version', '--dry-run');
+      await expect(cli.parseEarlyFlags(argv)).resolves.toBe(false);
+      await expect(cli.getConfig(argv)).resolves.toEqual({
+        repositories: ['--version', '--dry-run'],
+      });
+    });
+
+    it('leaves a flag-like required value with its option', async () => {
+      argv.push('--token', '-v');
+      await expect(cli.parseEarlyFlags(argv)).resolves.toBe(false);
+      await expect(cli.getConfig(argv)).resolves.toEqual({ token: '-v' });
     });
   });
 });

@@ -1,7 +1,7 @@
-import { Command } from 'commander';
+import { cli, command, flag } from '@kjanat/dreamcli';
 import { init, logger } from '../lib/logger/index.ts';
 import { exec } from './utils/exec.ts';
-import type { CliOptions, GitHubLabel } from './utils/sync-module-labels.ts';
+import type { GitHubLabel } from './utils/sync-module-labels.ts';
 import {
   formatCreateLabelCommands,
   formatMissingLabels,
@@ -35,14 +35,19 @@ process.on('unhandledRejection', (err) => {
   process.exit(-1);
 });
 
-const program = new Command('node tools/sync-module-labels.ts')
+const sync = command('labels')
   .description('Check that datasource/manager/platform GitHub labels exist.')
-  .option('--repo <owner/name>', `Repository to query`, defaultRepo)
-  .option(
-    '--show-commands',
-    'Print gh label create commands for any missing labels',
+  .flag(
+    'repo',
+    flag.string().default(defaultRepo).describe('Repository to query'),
   )
-  .action(async (options: CliOptions) => {
+  .flag(
+    'showCommands',
+    flag
+      .boolean()
+      .describe('Print gh label create commands for any missing labels'),
+  )
+  .action(async ({ flags: options }) => {
     const expectedLabels = getExpectedModuleLabels();
     const existingLabels = await getRepoLabels(options.repo);
     const missingLabels = getMissingModuleLabels(
@@ -75,4 +80,4 @@ const program = new Command('node tools/sync-module-labels.ts')
     process.exitCode = 1;
   });
 
-void program.parseAsync();
+await cli('node tools/sync-module-labels.ts').default(sync).run();

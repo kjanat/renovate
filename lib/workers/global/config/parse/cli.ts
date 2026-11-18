@@ -1,5 +1,5 @@
+import { arg, cli, command, flag } from '@kjanat/dreamcli';
 import { isPlainObject } from '@sindresorhus/is';
-import { Command, Option } from 'commander';
 import { flatDependencyDashboardOptions } from '../../../../config/migrations/custom/dependency-dashboard-migration.ts';
 import { getOptions } from '../../../../config/options/index.ts';
 import type { AllConfig } from '../../../../config/types.ts';
@@ -21,61 +21,99 @@ export function getCliName(option: ParseConfigOptions): string {
   return `--${nameWithHyphens.toLowerCase()}`;
 }
 
-function createProgram(): Command<[string[]]> {
-  const options = getOptions();
+const options = getOptions().filter((option) => option.cli !== false);
+const legacyOptions = Object.entries(flatDependencyDashboardOptions).map(
+  ([name, { type }]) => ({ name, type, description: '' }),
+);
+const cliOptions = new Map(
+  [...options, ...legacyOptions].map((option) => [getCliName(option), option]),
+);
 
-  let program = new Command().arguments('[repositories...]');
-
-  options.forEach((option) => {
-    if (option.cli !== false) {
-      const param = `<${option.type}>`.replace('<boolean>', '[boolean]');
-      const optionString = `${getCliName(option)} ${param}`;
-      program = program.option(
-        optionString,
-        option.description,
-        coersions[option.type],
-      );
+function createProgram(
+  onConfig?: (flags: Record<string, unknown>, repositories: string[]) => void,
+  includeLegacy = true,
+): ReturnType<typeof cli> {
+  let run = command('renovate')
+    .arg('repositories', arg.string().variadic().default([]))
+    .example(
+      'singapore/lint-condo singapore/package-test',
+      'Process two repositories',
+    )
+    .example(
+      '--labels=renovate,dependency --ignore-unstable=false singapore/lint-condo',
+      'Set configuration from the command line',
+    );
+  for (const [spelling, { type, description }] of cliOptions) {
+    if (!includeLegacy && !description) {
+      continue;
     }
-  });
-
-  // still accept the flags of the flat Dependency Dashboard options, which `getConfig` migrates
-  for (const [name, { type }] of Object.entries(
-    flatDependencyDashboardOptions,
-  )) {
-    const param = `<${type}>`.replace('<boolean>', '[boolean]');
-    program = program.addOption(
-      new Option(`${getCliName({ name })} ${param}`)
-        .hideHelp()
-        .argParser(coersions[type]),
+    run = run.flag(
+      spelling.slice(2),
+      flag
+        .custom((value) => {
+          try {
+            return coersions[type](String(value));
+          } catch {
+            throw new Error(`Expected a valid ${type} value`);
+          }
+        })
+        .describe(description)
+        .sensitive(),
     );
   }
+  return cli('renovate')
+    .builtins({ json: 'off', quiet: 'off' })
+    .version(pkg.version)
+    .default(
+      run.action(({ flags, args }) => {
+        const config = Object.fromEntries(
+          Array.from(cliOptions, ([spelling, { name }]) => [
+            name,
+            flags[spelling.slice(2)],
+          ]),
+        );
+        onConfig?.(config, args.repositories);
+      }),
+    );
+}
 
-  /* oxlint-disable no-console -- intentional: CLI help output */
-  /* istanbul ignore next */
-  function helpConsole(): void {
-    console.log('  Examples:');
-    console.log('');
-    console.log('    $ renovate --token 123test singapore/lint-condo');
-    console.log(
-      '    $ LOG_LEVEL=debug renovate --labels=renovate,dependency --ignore-unstable=false singapore/lint-condo',
-    );
-    console.log('    $ renovate singapore/lint-condo singapore/package-test');
-    console.log(
-      `    $ renovate singapore/lint-condo --onboarding-config='{"extends":["config:recommended"]}'`,
-    );
-    /* oxlint-enable no-console */
+function normalizeArgs(input: string[]): string[] {
+  const args = input.slice(2);
+  const separator = args.indexOf('--');
+  const argv =
+    separator === -1
+      ? migrateArgs(args)
+      : [...migrateArgs(args.slice(0, separator)), ...args.slice(separator)];
+  const output: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (token === '--') {
+      output.push(...argv.slice(i));
+      break;
+    }
+    const option = cliOptions.get(token);
+    if (option?.type === 'boolean') {
+      const value = argv[i + 1];
+      if (value !== undefined && !value.startsWith('-')) {
+        output.push(`${token}=${value}`);
+        i++;
+      } else {
+        output.push(`${token}=true`);
+      }
+    } else if (option && argv[i + 1] !== undefined) {
+      output.push(`${token}=${argv[++i]}`);
+    } else {
+      output.push(token === '-v' ? '--version' : token);
+    }
   }
-
-  return program
-    .version(pkg.version, '-v, --version')
-    .on('--help', helpConsole);
+  return output;
 }
 
 /**
  * Massage migrated configuration keys.
- * This must run before any Commander parse call so that
+ * This runs before parsing so that
  * deprecated/bare flags like `--dry-run` (no value) are rewritten
- * before Commander tries to consume them.
+ * before the parser consumes them.
  */
 function migrateArgs(input: string[]): string[] {
   return input
@@ -115,63 +153,68 @@ function migrateArgs(input: string[]): string[] {
     .filter((a) => !a.startsWith('--git-fs'));
 }
 
-export function parseEarlyFlags(input: string[] = process.argv): void {
-  createProgram()
-    .allowUnknownOption()
-    .allowExcessArguments()
-    .parse(migrateArgs(input));
+export async function parseEarlyFlags(
+  input: string[] = process.argv,
+): Promise<boolean> {
+  const argv = normalizeArgs(input);
+  for (const token of argv) {
+    if (token === '--') {
+      break;
+    }
+    if (['-h', '--help', '--version', '-V'].includes(token)) {
+      const result = await createProgram(undefined, false).execute([token]);
+      process.stdout.write(result.stdout.join(''));
+      process.stderr.write(result.stderr.join(''));
+      process.exitCode = result.exitCode;
+      return true;
+    }
+  }
+  return false;
 }
 
-export function getConfig(input: string[]): AllConfig {
-  const argv = migrateArgs(input);
-  const options = getOptions();
+export async function getConfig(input: string[]): Promise<AllConfig> {
+  const config: Record<string, unknown> = {};
 
-  const config: Record<string, any> = {};
+  const result = await createProgram((opts, repositories) => {
+    if (repositories?.length) {
+      config.repositories = repositories;
+    }
 
-  createProgram()
-    .action((repositories: string[], opts: Record<string, unknown>) => {
-      if (repositories?.length) {
-        config.repositories = repositories;
-      }
-
-      for (const option of options) {
-        if (option.cli !== false && opts[option.name] !== undefined) {
-          config[option.name] = opts[option.name];
-          if (option.name === 'dryRun') {
-            if (config[option.name] === 'true') {
-              logger.warn(
-                'cli config dryRun property has been changed to full',
-              );
-              config[option.name] = 'full';
-            } else if (config[option.name] === 'false') {
-              logger.warn(
-                'cli config dryRun property has been changed to null',
-              );
-              config[option.name] = null;
-            } else if (config[option.name] === 'null') {
-              config[option.name] = null;
-            }
+    for (const option of options) {
+      if (option.cli !== false && opts[option.name] !== undefined) {
+        config[option.name] = opts[option.name];
+        if (option.name === 'dryRun') {
+          if (config[option.name] === 'true') {
+            logger.warn('cli config dryRun property has been changed to full');
+            config[option.name] = 'full';
+          } else if (config[option.name] === 'false') {
+            logger.warn('cli config dryRun property has been changed to null');
+            config[option.name] = null;
+          } else if (config[option.name] === 'null') {
+            config[option.name] = null;
           }
-          if (option.name === 'requireConfig') {
-            if (config[option.name] === 'true') {
-              logger.warn(
-                'cli config requireConfig property has been changed to required',
-              );
-              config[option.name] = 'required';
-            } else if (config[option.name] === 'false') {
-              logger.warn(
-                'cli config requireConfig property has been changed to optional',
-              );
-              config[option.name] = 'optional';
-            }
+        }
+        if (option.name === 'requireConfig') {
+          if (config[option.name] === 'true') {
+            logger.warn(
+              'cli config requireConfig property has been changed to required',
+            );
+            config[option.name] = 'required';
+          } else if (config[option.name] === 'false') {
+            logger.warn(
+              'cli config requireConfig property has been changed to optional',
+            );
+            config[option.name] = 'optional';
           }
         }
       }
+    }
 
-      migrateDependencyDashboardFlags(opts, config);
-    })
-    .parse(argv);
-
+    migrateDependencyDashboardFlags(opts, config);
+  }).execute(normalizeArgs(input));
+  if (result.error) {
+    throw result.error;
+  }
   return config;
 }
 

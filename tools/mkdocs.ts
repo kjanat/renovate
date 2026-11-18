@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { cli, command, flag } from '@kjanat/dreamcli';
 import type { Result, ResultPromise } from 'execa';
 import { execa } from 'execa';
 import fs from 'fs-extra';
@@ -14,16 +14,34 @@ process.on('unhandledRejection', (err) => {
   process.exit(-1);
 });
 
-const program = new Command('pnpm mkdocs').description('Run mkdocs');
+const buildDocs = flag
+  .boolean()
+  .negatable()
+  .default(true)
+  .describe('Build docs from source');
+const strict = flag
+  .boolean()
+  .negatable()
+  .default(true)
+  .describe('Run in strict mode');
 
-program
-  .command('build', { isDefault: true })
+const build = command('build')
   .description('Build mkdocs')
-  .option('--version <version>', 'the current version of the Renovate CLI')
-  .option('--no-build', 'do not build docs from source')
-  .option('--no-strict', 'do not build in strict mode')
-  .option('--no-announcement', 'do not include the announcement bar')
-  .action(async (opts) => {
+  .flag(
+    'version',
+    flag.string().describe('The current version of the Renovate CLI'),
+  )
+  .flag('build', buildDocs)
+  .flag('strict', strict)
+  .flag(
+    'announcement',
+    flag
+      .boolean()
+      .negatable()
+      .default(true)
+      .describe('Include the announcement bar'),
+  )
+  .action(async ({ flags: opts }) => {
     await prepareDocs(opts);
     if (opts.announcement) {
       logger.info('* running mkdocs build');
@@ -47,12 +65,11 @@ program
     checkResult(res);
   });
 
-program
-  .command('serve')
+const serve = command('serve')
   .description('serve mkdocs')
-  .option('--no-build', 'do not build docs from source')
-  .option('--no-strict', 'do not build in strict mode')
-  .action(async (opts) => {
+  .flag('build', buildDocs)
+  .flag('strict', strict)
+  .action(async ({ flags: opts }) => {
     logger.info('serving docs');
     const mkdocsArgs = ['run', 'mkdocs', 'serve'];
     if (opts.strict) {
@@ -100,7 +117,10 @@ program
     }
   });
 
-async function prepareDocs(opts: any): Promise<void> {
+async function prepareDocs(opts: {
+  build: boolean;
+  version?: string | undefined;
+}): Promise<void> {
   logger.info('Building docs');
   if (opts.build) {
     logger.info('* generate docs');
@@ -137,4 +157,8 @@ function checkResult(
   }
 }
 
-void program.parseAsync();
+await cli('pnpm mkdocs')
+  .description('Run mkdocs')
+  .default(build, { route: true })
+  .command(serve)
+  .run();

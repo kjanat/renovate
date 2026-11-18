@@ -4,7 +4,7 @@
 
 import { readdir } from 'node:fs/promises';
 import { extname } from 'node:path';
-import { Command } from 'commander';
+import { arg, cli, command, flag } from '@kjanat/dreamcli';
 import {
   getCoverageForDir,
   getCoverageForFiles,
@@ -175,21 +175,36 @@ async function collectCoverage(args: CliArgs): Promise<CoverageInfo[]> {
   return coverage;
 }
 
-function parseCliArgs(): CliArgs {
+async function parseCliArgs(): Promise<CliArgs | undefined> {
   let args: CliArgs | undefined;
 
-  new Command('pnpm check')
+  const check = command('check')
     .description('Fast local CI check script')
-    .argument('[targets...]', 'files or directories to scope checks to')
-    .option('--all', 'run fixers first, then all lint checks and tests')
-    .option('--fix', 'run fixers only (oxlint-fix, biome-fix, prettier-fix)')
-    .option('--no-test', 'skip tests')
-    .option(
-      '--coverage-dir <dir>',
-      'directory the tests write their coverage report to',
-      'coverage',
+    .arg(
+      'targets',
+      arg
+        .string()
+        .variadic()
+        .default([])
+        .describe('Files or directories to check'),
     )
-    .action((targets, opts) => {
+    .flag(
+      'all',
+      flag.boolean().describe('Run fixers first, then lint and tests'),
+    )
+    .flag('fix', flag.boolean().describe('Run fixers only'))
+    .flag(
+      'test',
+      flag.boolean().negatable().default(true).describe('Run tests'),
+    )
+    .flag(
+      'coverageDir',
+      flag
+        .string()
+        .default('coverage')
+        .describe('Directory for the coverage report'),
+    )
+    .action(({ args: { targets }, flags: opts }) => {
       args = {
         all: opts.all ?? false,
         fix: opts.fix ?? false,
@@ -197,10 +212,18 @@ function parseCliArgs(): CliArgs {
         coverageDir: opts.coverageDir,
         targets,
       };
-    })
-    .parse();
+    });
 
-  return args!;
+  const result = await cli('pnpm check')
+    .default(check)
+    .execute(process.argv.slice(2));
+  if (!args) {
+    process.stdout.write(result.stdout.join(''));
+    process.stderr.write(result.stderr.join(''));
+    process.exitCode = result.exitCode;
+  }
+
+  return args;
 }
 
 async function buildTestChecks(args: CliArgs): Promise<ParallelCheck[]> {
@@ -248,7 +271,10 @@ async function buildTestChecks(args: CliArgs): Promise<ParallelCheck[]> {
 
 async function main(): Promise<void> {
   const startTime = Date.now();
-  const args = parseCliArgs();
+  const args = await parseCliArgs();
+  if (!args) {
+    return;
+  }
   const testChecks = await buildTestChecks(args);
 
   let fixChecks: ParallelCheck[];

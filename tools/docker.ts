@@ -1,37 +1,53 @@
-import { Command } from 'commander';
+import { arg, cli, command, flag } from '@kjanat/dreamcli';
+import { SemVer } from 'semver';
 import { init, logger } from '../lib/logger/index.ts';
 import { bake } from './utils/docker.ts';
-import { parsePositiveInt, parseVersion } from './utils/index.ts';
 
 await init();
 
-const program = new Command('pnpm build:docker');
+const platform = flag.string().describe('Docker platforms to build');
+const version = flag
+  .custom((value) => new SemVer(String(value)))
+  .describe('Version to use as tag');
 
-program
-  .command('build')
-  .description('Build docker images')
-  .option('--platform <type>', 'docker platforms to build')
-  .option('--version <version>', 'version to use as tag', parseVersion)
-  .option('--tries <tries>', 'number of tries on failure', parsePositiveInt)
-  .option(
-    '--delay <delay>',
-    'delay between tries for docker build (eg. 5s, 10m, 1h)',
-    '30s',
+const build = command('build')
+  .description('Build Docker images')
+  .flag('platform', platform)
+  .flag('version', version)
+  .flag(
+    'tries',
+    flag
+      .number({ int: true, min: 0 })
+      .default(0)
+      .describe('Number of retries after failure'),
   )
-  .option('--args <args...>', 'additional arguments to pass to docker build')
-  .action(async (opts) => {
+  .flag(
+    'delay',
+    flag
+      .duration()
+      .default(30_000)
+      .describe('Delay between build attempts (e.g. 30s)'),
+  )
+  .arg(
+    'dockerArgs',
+    arg
+      .string()
+      .variadic()
+      .default([])
+      .describe('Additional Docker Buildx arguments (place after --)'),
+  )
+  .action(async ({ flags: { delay, ...flags }, args }) => {
     logger.info('Building docker images ...');
-    await bake('build', opts);
+    await bake('build', { ...flags, delayMs: delay, args: args.dockerArgs });
   });
 
-program
-  .command('push')
-  .description('Publish docker images')
-  .option('--platform <type>', 'docker platforms to build')
-  .option('--version <version>', 'version to use as tag', parseVersion)
-  .action(async (opts) => {
+const push = command('push')
+  .description('Publish Docker images')
+  .flag('platform', platform)
+  .flag('version', version)
+  .action(async ({ flags }) => {
     logger.info('Publishing docker images ...');
-    await bake('push', opts);
+    await bake('push', flags);
   });
 
-void program.parseAsync();
+await cli('pnpm build:docker').command(build).command(push).run();

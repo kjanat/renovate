@@ -108,7 +108,7 @@ export async function parseConfigs(
   const defaultConfig = defaultsParser.getConfig();
   const fileConfig = await fileParser.getConfig(env);
   const additionalFileConfig = await additionalConfigFileParser.getConfig(env);
-  const cliConfig = cliParser.getConfig(argv);
+  const cliConfig = await cliParser.getConfig(argv);
   const envConfig = await envParser.getConfig(env);
 
   let config: AllConfig = mergeChildConfig(fileConfig, additionalFileConfig);

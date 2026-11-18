@@ -1,4 +1,4 @@
-import { Argument, Command } from 'commander';
+import { arg, cli, command, flag } from '@kjanat/dreamcli';
 import fs from 'fs-extra';
 import prettier from 'prettier';
 import { quickStringify } from '../../lib/util/stringify.ts';
@@ -19,24 +19,31 @@ const sources: StaticDataSource<unknown, object>[] = [
   nodeSchedule,
 ];
 
-interface Options {
-  commit: boolean;
-}
-
-await new Command('pnpm update-static-data')
+const update = command('update')
   .description('Update the static data used by Renovate')
-  .addArgument(
-    new Argument(
-      '[sources...]',
-      'the static data sources to update (default: all)',
-    ).choices(sources.map((s) => s.name)),
+  .arg(
+    'sources',
+    arg
+      .custom((value) => {
+        const name = String(value);
+        if (!sources.some((source) => source.name === name)) {
+          throw new Error('Expected a known static data source');
+        }
+        return name;
+      })
+      .variadic()
+      .default([])
+      .describe('Static data sources to update (default: all)'),
   )
-  .option(
-    '--commit',
-    'commit the changes to each source separately, with a descriptive message',
-    false,
+  .flag(
+    'commit',
+    flag
+      .boolean()
+      .describe(
+        'Commit the changes to each source separately, with a descriptive message',
+      ),
   )
-  .action(async (names: string[], { commit }: Options) => {
+  .action(async ({ args: { sources: names }, flags: { commit } }) => {
     // the branches for each committed source, from the bottom of the stack to the top
     const branches: string[] = [];
     for (const source of sources) {
@@ -88,5 +95,6 @@ await new Command('pnpm update-static-data')
         `branches=${branches.join(' ')}\n`,
       );
     }
-  })
-  .parseAsync();
+  });
+
+await cli('pnpm update-static-data').default(update).run();

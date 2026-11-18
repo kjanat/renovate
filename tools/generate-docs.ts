@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { cli, command, flag } from '@kjanat/dreamcli';
 import { init, logger } from '../lib/logger/index.ts';
 import { generateDocs } from './docs/index.ts';
 
@@ -10,11 +10,14 @@ process.on('unhandledRejection', (err) => {
   process.exit(-1);
 });
 
-const program = new Command('pnpm build:docs')
+const generate = command('generate')
   .description('Generate docs')
-  .option('--mkdocs', 'generate docs for mkdocs')
-  .option('--version <version>', 'the current version of the Renovate CLI')
-  .action(async (opts) => {
+  .flag('mkdocs', flag.boolean().describe('Generate docs for MkDocs'))
+  .flag(
+    'version',
+    flag.string().describe('The current version of the Renovate CLI'),
+  )
+  .action(async ({ flags: opts }) => {
     if (opts.mkdocs) {
       logger.info('Generating for mkdocs');
       await generateDocs('tools/mkdocs', false, opts.version);
@@ -25,4 +28,4 @@ const program = new Command('pnpm build:docs')
     logger.info('Generation completed');
   });
 
-void program.parseAsync();
+await cli('pnpm build:docs').default(generate).run();

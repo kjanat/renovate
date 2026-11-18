@@ -23,7 +23,10 @@ void (async (): Promise<void> => {
   const { parseEarlyFlags } =
     await import('./workers/global/config/parse/cli.ts');
 
-  parseEarlyFlags();
+  if (await parseEarlyFlags()) {
+    await otel.shutdown();
+    return;
+  }
 
   const { start } = await import('./workers/global/index.ts');
   process.exitCode = await otel.instrument('run', start);
