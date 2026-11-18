@@ -1,4 +1,5 @@
-import { isFunction } from '@sindresorhus/is';
+import { stripVTControlCharacters } from 'node:util';
+import { createTestAdapter } from '@kjanat/dreamcli/testkit';
 import { execa } from 'execa';
 import { pkg } from '../../../../expose.ts';
 import { logger } from '../../../../logger/index.ts';
@@ -355,7 +356,20 @@ describe('workers/global/config/parse/cli', () => {
     });
   });
 
-  describe('.parseEarlyFlags(argv)', () => {
+  describe('CLI dispatch', () => {
+    it('hands parsed config to the default action and returns its exit status', async () => {
+      const run = vi.fn().mockResolvedValue(5);
+      const adapter = createTestAdapter({
+        argv: ['node', 'renovate', '--dry-run', 'org/repo'],
+      });
+
+      await expect(cli.runRenovateCli(run, adapter)).resolves.toBe(5);
+      expect(run).toHaveBeenCalledExactlyOnceWith({
+        dryRun: 'full',
+        repositories: ['org/repo'],
+      });
+    });
+
     it('keeps multiline option prose in the description column', async () => {
       const { stdout } = await execa('node', ['lib/renovate.ts', '--help'], {
         env: { NO_COLOR: '1' },
@@ -376,39 +390,25 @@ describe('workers/global/config/parse/cli', () => {
       );
     });
 
-    it('prints version and exits when --version is passed', async () => {
-      const previousExitCode = process.exitCode;
-      const stdoutSpy = vi
-        .spyOn(process.stdout, 'write')
-        .mockImplementation((_chunk, encoding, callback) => {
-          const done = isFunction(encoding) ? encoding : callback;
-          done?.();
-          return true;
-        });
+    it.each(['-v', '--version'])(
+      'dispatches %s to built-in version',
+      async (token) => {
+        const { stdout } = await execa('node', ['lib/renovate.ts', token]);
+        expect(stdout).toBe(pkg.version);
+      },
+    );
 
-      await expect(cli.parseEarlyFlags([...argv, '--version'])).resolves.toBe(
-        true,
-      );
-
-      expect(stdoutSpy).toHaveBeenCalledWith(
-        expect.stringContaining(pkg.version),
-        expect.any(Function),
-      );
-      expect(process.exitCode).toBe(0);
-
-      stdoutSpy.mockRestore();
-      process.exitCode = previousExitCode;
-    });
-
-    it('does not error when --dry-run is the last argument', async () => {
-      await expect(
-        cli.parseEarlyFlags([...argv, 'myrepo', '--dry-run']),
-      ).resolves.toBe(false);
+    it('renders the development branch link without Markdown syntax', async () => {
+      const { stdout } = await execa('node', ['lib/renovate.ts', '--help'], {
+        env: { FORCE_HYPERLINKS: '1' },
+      });
+      expect(stripVTControlCharacters(stdout)).toMatch(/development\s+branch/);
+      expect(stdout).not.toContain('[development branch](');
+      expect(stdout).toContain('\u001B]8;;https://support.atlassian.com/');
     });
 
     it('leaves arguments after the separator untouched', async () => {
       argv.push('--', '--version', '--dry-run');
-      await expect(cli.parseEarlyFlags(argv)).resolves.toBe(false);
       await expect(cli.getConfig(argv)).resolves.toEqual({
         repositories: ['--version', '--dry-run'],
       });
@@ -416,7 +416,6 @@ describe('workers/global/config/parse/cli', () => {
 
     it('leaves a flag-like required value with its option', async () => {
       argv.push('--token', '-v');
-      await expect(cli.parseEarlyFlags(argv)).resolves.toBe(false);
       await expect(cli.getConfig(argv)).resolves.toEqual({ token: '-v' });
     });
   });

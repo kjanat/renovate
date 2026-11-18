@@ -1,5 +1,5 @@
 import * as otel from './instrumentation/index.ts';
-import { parseEarlyFlags } from './workers/global/config/parse/cli.ts';
+import { runRenovateCli } from './workers/global/config/parse/cli.ts';
 import * as renovateWorker from './workers/global/index.ts';
 
 vi.mock('./instrumentation/index.ts');
@@ -13,7 +13,13 @@ describe('renovate', () => {
     async (earlyExit) => {
       vi.resetModules();
       vi.clearAllMocks();
-      vi.mocked(parseEarlyFlags).mockResolvedValueOnce(earlyExit);
+      const config = { repositories: ['org/repo'] };
+      vi.mocked(runRenovateCli).mockImplementationOnce(async (run) => {
+        if (earlyExit) {
+          return 0;
+        }
+        return await run(config);
+      });
       vi.mocked(otel.instrument).mockImplementationOnce((_, cb) => cb());
       const waiter = new Promise<void>((resolve) => {
         vi.mocked(otel.shutdown).mockImplementationOnce(() => {
@@ -23,7 +29,9 @@ describe('renovate', () => {
       });
       await vi.importActual('./renovate.ts');
       await waiter;
-      expect(renovateWorker.start).toHaveBeenCalledTimes(earlyExit ? 0 : 1);
+      expect(vi.mocked(renovateWorker.start).mock.calls).toEqual(
+        earlyExit ? [] : [[config]],
+      );
       expect(otel.shutdown).toHaveBeenCalledTimes(1);
     },
   );

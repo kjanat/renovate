@@ -20,15 +20,13 @@ void (async (): Promise<void> => {
 
     (await import('./proxy.ts')).bootstrap();
 
-    const { parseEarlyFlags } =
+    const { runRenovateCli } =
       await import('./workers/global/config/parse/cli.ts');
 
-    if (await parseEarlyFlags()) {
-      return;
-    }
-
-    const { start } = await import('./workers/global/index.ts');
-    process.exitCode = await otel.instrument('run', start);
+    process.exitCode = await runRenovateCli(async (config) => {
+      const { start } = await import('./workers/global/index.ts');
+      return otel.instrument('run', () => start(config));
+    });
   } finally {
     await otel.shutdown();
   }

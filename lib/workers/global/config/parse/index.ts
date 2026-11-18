@@ -100,7 +100,7 @@ async function resolveGlobalExtendsAsAdmin(
 
 export async function parseConfigs(
   env: NodeJS.ProcessEnv,
-  argv: string[],
+  cliInput: string[] | AllConfig,
 ): Promise<AllConfig> {
   logger.debug('Parsing configs');
 
@@ -108,7 +108,12 @@ export async function parseConfigs(
   const defaultConfig = defaultsParser.getConfig();
   const fileConfig = await fileParser.getConfig(env);
   const additionalFileConfig = await additionalConfigFileParser.getConfig(env);
-  const cliConfig = await cliParser.getConfig(argv);
+  let cliConfig: AllConfig;
+  if (Array.isArray(cliInput)) {
+    cliConfig = await cliParser.getConfig(cliInput);
+  } else {
+    cliConfig = cliInput;
+  }
   const envConfig = await envParser.getConfig(env);
 
   let config: AllConfig = mergeChildConfig(fileConfig, additionalFileConfig);

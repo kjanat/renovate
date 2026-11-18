@@ -104,10 +104,6 @@ export async function getRepositoryConfig(
   return configParser.filterConfig(repoConfig, 'repository');
 }
 
-function getGlobalConfig(): Promise<RenovateConfig> {
-  return parseConfigs(getEnv(), process.argv);
-}
-
 function haveReachedLimits(): boolean {
   if (isLimitReached('Commits')) {
     logger.info('Max commits created for this run.');
@@ -142,7 +138,7 @@ export async function validatePresets(config: AllConfig): Promise<void> {
   }
 }
 
-export async function start(): Promise<number> {
+export async function start(cliConfig?: AllConfig): Promise<number> {
   logger.info({ renovateVersion: pkg.version }, 'Renovate started');
   // istanbul ignore next
   if (regexEngineStatus.type === 'available') {
@@ -175,7 +171,7 @@ export async function start(): Promise<number> {
 
     await instrument('config', async () => {
       // read global config from file, env and cli args
-      config = await getGlobalConfig();
+      config = await parseConfigs(env, cliConfig ?? process.argv);
 
       // set before `globalInitialize()`, so that `hostRules` headers from file config are checked against `allowedHeaders`, and the platform's own initialization requests are judged by the administrator's `internalHostAccess` setting and recognized as going to the platform endpoint
       setHttpGlobalConfig(config);

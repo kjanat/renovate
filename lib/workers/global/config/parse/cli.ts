@@ -1,5 +1,12 @@
 import type { FlagBuilder, FlagConfig } from '@kjanat/dreamcli';
-import { arg, cli, command, flag } from '@kjanat/dreamcli';
+import {
+  arg,
+  cli,
+  command,
+  flag,
+  osc8,
+  resolveRenderContext,
+} from '@kjanat/dreamcli';
 import { ExitError, createAdapter } from '@kjanat/dreamcli/runtime';
 import { isPlainObject, isString } from '@sindresorhus/is';
 import { flatDependencyDashboardOptions } from '../../../../config/migrations/custom/dependency-dashboard-migration.ts';
@@ -51,8 +58,8 @@ function optionFlag(type: string): FlagBuilder<FlagConfig> {
 }
 
 function createProgram(
-  onConfig?: (flags: Record<string, unknown>, repositories: string[]) => void,
-  includeLegacy = true,
+  onConfig: (config: AllConfig) => void | number | Promise<number>,
+  hyperlinks = false,
 ): ReturnType<typeof cli> {
   let run = command('renovate')
     .arg('repositories', arg.string().variadic().default([]))
@@ -65,13 +72,18 @@ function createProgram(
       'Set configuration from the command line',
     );
   for (const [spelling, { type, description }] of cliOptions) {
-    if (!includeLegacy && !description) {
-      continue;
-    }
     run = run.flag(
       spelling.slice(2),
       optionFlag(type)
-        .describe(description.replace(regEx(/\s*\r?\n\s*/g), ' '))
+        .describe(
+          description
+            .replace(
+              regEx(/\[(?<label>[^\]]+)\]\((?<url>https?:\/\/[^)]+)\)/g),
+              (_match, label: string, url: string) =>
+                hyperlinks ? osc8(url, label) : label,
+            )
+            .replace(regEx(/\s*\r?\n\s*/g), ' '),
+        )
         .sensitive(),
     );
   }
@@ -80,7 +92,7 @@ function createProgram(
     .manifest(pkg)
     .links()
     .default(
-      run.action(({ flags, args, sources }) => {
+      run.action(async ({ flags, args, sources, out }) => {
         const config: Record<string, unknown> = {};
         for (const [spelling, { name, type }] of cliOptions) {
           const key = spelling.slice(2);
@@ -93,7 +105,12 @@ function createProgram(
               ? coersions.string(value)
               : value;
         }
-        onConfig?.(config, args.repositories);
+        const code = await onConfig(
+          resolveCliConfig(config, args.repositories),
+        );
+        if (code !== undefined) {
+          out.setExitCode(code);
+        }
       }),
     );
 }
@@ -181,81 +198,85 @@ function migrateArgs(input: string[]): string[] {
     .filter((a) => !a.startsWith('--git-fs'));
 }
 
-export async function parseEarlyFlags(
-  input: string[] = process.argv,
-): Promise<boolean> {
-  const argv = normalizeArgs(input);
-  for (const token of argv) {
-    if (token === '--') {
-      break;
+export async function runRenovateCli(
+  run: (config: AllConfig) => Promise<number>,
+  adapter = createAdapter(),
+): Promise<number> {
+  const argv = normalizeArgs([...adapter.argv]);
+  const { isHyperlinkSupported } = resolveRenderContext(argv, {
+    env: adapter.env,
+    isTTY: adapter.isTTY,
+    builtins: { json: 'off', quiet: 'off' },
+  });
+  try {
+    await createProgram(run, isHyperlinkSupported).run({
+      adapter: {
+        ...adapter,
+        argv: [...adapter.argv.slice(0, 2), ...argv],
+        exit: (code) => {
+          throw new ExitError(code);
+        },
+      },
+    });
+  } catch (err) {
+    if (err instanceof ExitError) {
+      return err.code;
     }
-    if (['-h', '--help', '--version', '-V'].includes(token)) {
-      const adapter = createAdapter();
-      try {
-        await createProgram(undefined, false).run({
-          adapter: {
-            ...adapter,
-            argv: [...adapter.argv.slice(0, 2), token],
-            exit: (code) => {
-              throw new ExitError(code);
-            },
-          },
-        });
-      } catch (err) {
-        if (!(err instanceof ExitError)) {
-          throw err;
-        }
-        process.exitCode = err.code;
-      }
-      return true;
-    }
+    throw err;
   }
-  return false;
 }
 
 export async function getConfig(input: string[]): Promise<AllConfig> {
-  const config: Record<string, unknown> = {};
-
-  const result = await createProgram((opts, repositories) => {
-    if (repositories?.length) {
-      config.repositories = repositories;
-    }
-
-    for (const option of options) {
-      if (option.cli !== false && opts[option.name] !== undefined) {
-        config[option.name] = opts[option.name];
-        if (option.name === 'dryRun') {
-          if (config[option.name] === 'true') {
-            logger.warn('cli config dryRun property has been changed to full');
-            config[option.name] = 'full';
-          } else if (config[option.name] === 'false') {
-            logger.warn('cli config dryRun property has been changed to null');
-            config[option.name] = null;
-          } else if (config[option.name] === 'null') {
-            config[option.name] = null;
-          }
-        }
-        if (option.name === 'requireConfig') {
-          if (config[option.name] === 'true') {
-            logger.warn(
-              'cli config requireConfig property has been changed to required',
-            );
-            config[option.name] = 'required';
-          } else if (config[option.name] === 'false') {
-            logger.warn(
-              'cli config requireConfig property has been changed to optional',
-            );
-            config[option.name] = 'optional';
-          }
-        }
-      }
-    }
-
-    migrateDependencyDashboardFlags(opts, config);
+  let config: AllConfig = {};
+  const result = await createProgram((resolved) => {
+    config = resolved;
   }).execute(normalizeArgs(input));
   if (result.error) {
     throw result.error;
   }
+  return config;
+}
+
+function resolveCliConfig(
+  opts: Record<string, unknown>,
+  repositories: string[],
+): AllConfig {
+  const config: Record<string, unknown> = {};
+  if (repositories?.length) {
+    config.repositories = repositories;
+  }
+
+  for (const option of options) {
+    if (option.cli !== false && opts[option.name] !== undefined) {
+      config[option.name] = opts[option.name];
+      if (option.name === 'dryRun') {
+        if (config[option.name] === 'true') {
+          logger.warn('cli config dryRun property has been changed to full');
+          config[option.name] = 'full';
+        } else if (config[option.name] === 'false') {
+          logger.warn('cli config dryRun property has been changed to null');
+          config[option.name] = null;
+        } else if (config[option.name] === 'null') {
+          config[option.name] = null;
+        }
+      }
+      if (option.name === 'requireConfig') {
+        if (config[option.name] === 'true') {
+          logger.warn(
+            'cli config requireConfig property has been changed to required',
+          );
+          config[option.name] = 'required';
+        } else if (config[option.name] === 'false') {
+          logger.warn(
+            'cli config requireConfig property has been changed to optional',
+          );
+          config[option.name] = 'optional';
+        }
+      }
+    }
+  }
+
+  migrateDependencyDashboardFlags(opts, config);
   return config;
 }
 
