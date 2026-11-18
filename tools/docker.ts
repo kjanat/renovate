@@ -1,9 +1,27 @@
-import { arg, cli, command, flag } from '@kjanat/dreamcli';
+import { CLIError, arg, cli, command, flag } from '@kjanat/dreamcli';
 import { SemVer } from 'semver';
 import { init, logger } from '../lib/logger/index.ts';
-import { bake } from './utils/docker.ts';
+import { DockerBakeError, bake } from './utils/docker.ts';
 
 await init();
+
+async function bakeFromCli(
+  target: 'build' | 'push',
+  options: Parameters<typeof bake>[1],
+): Promise<void> {
+  try {
+    await bake(target, options);
+  } catch (err) {
+    if (!(err instanceof DockerBakeError)) {
+      throw err;
+    }
+    throw new CLIError(`Docker image ${target} failed`, {
+      code: target === 'build' ? 'DOCKER_BUILD_FAILED' : 'DOCKER_PUSH_FAILED',
+      exitCode: 1,
+      suggest: 'Check the Docker Buildx output above.',
+    });
+  }
+}
 
 const platform = flag.string().describe('Docker platforms to build');
 const version = flag
@@ -38,7 +56,11 @@ const build = command('build')
   )
   .action(async ({ flags: { delay, ...flags }, args }) => {
     logger.info('Building docker images ...');
-    await bake('build', { ...flags, delayMs: delay, args: args.dockerArgs });
+    await bakeFromCli('build', {
+      ...flags,
+      delayMs: delay,
+      args: args.dockerArgs,
+    });
   });
 
 const push = command('push')
@@ -47,7 +69,7 @@ const push = command('push')
   .flag('version', version)
   .action(async ({ flags }) => {
     logger.info('Publishing docker images ...');
-    await bake('push', flags);
+    await bakeFromCli('push', flags);
   });
 
 await cli('pnpm build:docker').command(build).command(push).run();

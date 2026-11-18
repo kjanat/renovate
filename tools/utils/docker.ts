@@ -9,6 +9,14 @@ import { commandError, exec } from './exec.ts';
 const file = 'tools/docker/bake.hcl';
 const tmp = fs.mkdtemp(path.join(os.tmpdir(), 'renovate-docker-bake-'));
 
+export class DockerBakeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DockerBakeError';
+    this.stack = `${this.name}: ${this.message}`;
+  }
+}
+
 export interface MetaDataItem {
   'containerimage.digest'?: string;
 }
@@ -56,7 +64,7 @@ export async function bake(
     args.push('--set', `settings.platform=${opts.platform}`);
   }
 
-  if (Array.isArray(opts.args)) {
+  if (opts.args?.length) {
     console.log(`Using args: ${opts.args.join(' ')}`);
     args.push(...opts.args);
   }
@@ -74,7 +82,7 @@ export async function bake(
     }
     const message = result.shortMessage ?? `docker bake ${target} failed`;
     if (result.signal || tries <= 0) {
-      throw commandError(message);
+      throw new DockerBakeError(message);
     }
     logger.warn(message);
     if (opts.delayMs) {
